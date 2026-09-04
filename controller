@@ -4,6 +4,7 @@ set -u
 
 als_scale=0.001
 poll_interval=0.5
+manual_check_interval=2
 lux_ema_alpha=0.25
 hysteresis=0.20
 brighten_alpha=0.35
@@ -127,9 +128,9 @@ discover_sensors() {
 }
 
 emit_status() {
-  local available="$1" error="$2"
-  printf '{"available":%s,"monitor":"%s","sensor":"%s","lux":%.1f,"brightness":%d,"target":%.1f,"error":"%s"}\n' \
-    "$available" "$monitor" "${sensor:-}" "${filtered_lux:-0}" "${last_applied:-0}" "${target:-0}" "$error"
+  local available="$1" error="$2" manual="${3:-false}"
+  printf '{"available":%s,"monitor":"%s","sensor":"%s","lux":%.1f,"brightness":%d,"target":%.1f,"error":"%s","manual":%s}\n' \
+    "$available" "$monitor" "${sensor:-}" "${filtered_lux:-0}" "${last_applied:-0}" "${target:-0}" "$error" "$manual"
 }
 
 trap 'exit 0' TERM INT
@@ -140,6 +141,7 @@ filtered_lux=""
 accepted_lux=""
 brightness=""
 last_applied=0
+last_manual_check=0
 target=0
 
 while true; do
@@ -175,6 +177,17 @@ while true; do
     calculate "$lux" "$filtered_lux" "$accepted_lux" "$brightness" "$profile"
   )"
 
+  if (( last_applied > 0 && SECONDS - last_manual_check >= manual_check_interval )); then
+    current=$(timeout 10 omarchy-brightness-display --monitor "$monitor" 2>/dev/null || true)
+    if [[ $current =~ ^[0-9]+$ ]] && (( current != last_applied )); then
+      last_applied=$current
+      omarchy bar set miharekar.studio-display-auto-brightness paused true --json >/dev/null 2>&1 || true
+      emit_status true "" true
+      while true; do sleep 3600; done
+    fi
+    last_manual_check=$SECONDS
+  fi
+
   if (( desired != last_applied )); then
     if ! timeout 10 omarchy-brightness-display --no-osd --monitor "$monitor" "$desired%" >/dev/null 2>&1; then
       emit_status true "Brightness command failed"
@@ -184,10 +197,12 @@ while true; do
       accepted_lux=""
       brightness=""
       last_applied=0
+      last_manual_check=0
       sleep "$poll_interval"
       continue
     fi
     last_applied=$desired
+    last_manual_check=$SECONDS
   fi
 
   emit_status true ""

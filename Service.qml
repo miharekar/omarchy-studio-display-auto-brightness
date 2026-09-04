@@ -116,6 +116,7 @@ Item {
       if (typeof status.brightness === "number") brightness = status.brightness
       if (typeof status.target === "number") target = status.target
       error = status.error || ""
+      if (status.manual === true) setPaused(true)
     } catch (e) {
       error = "Invalid controller status"
     }

@@ -8,7 +8,9 @@ The same hardware interfaces may make it work with other Apple displays, but
 those still need testing.
 
 The higher-numbered Apple HID ALS defaults to Front. The panel can switch to
-Rear, pause control, and select Dim, Balanced, or Bright preferences.
+Back, pause control, and select Dim, Balanced, or Bright preferences. A manual
+brightness adjustment pauses automatic control until it is resumed in the
+panel.
 
 ## Install
 
