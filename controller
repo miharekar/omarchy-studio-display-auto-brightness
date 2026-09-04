@@ -129,14 +129,19 @@ discover_sensors() {
 
 emit_status() {
   local available="$1" error="$2" manual="${3:-false}"
-  printf '{"available":%s,"monitor":"%s","sensor":"%s","lux":%.1f,"brightness":%d,"target":%.1f,"error":"%s","manual":%s}\n' \
-    "$available" "$monitor" "${sensor:-}" "${filtered_lux:-0}" "${last_applied:-0}" "${target:-0}" "$error" "$manual"
+  printf '{"available":%s,"monitor":"%s","sensor":"%s","lux":%.1f,"backLux":%.1f,"frontLux":%.1f,"brightness":%d,"target":%.1f,"error":"%s","manual":%s}\n' \
+    "$available" "$monitor" "${sensor:-}" "${filtered_lux:-0}" "${back_lux:-0}" "${front_lux:-0}" \
+    "${last_applied:-0}" "${target:-0}" "$error" "$manual"
 }
 
 trap 'exit 0' TERM INT
 
 monitor=""
 sensor=""
+back_sensor=""
+front_sensor=""
+back_lux=0
+front_lux=0
 filtered_lux=""
 accepted_lux=""
 brightness=""
@@ -158,21 +163,24 @@ while true; do
       sleep "$poll_interval"
       continue
     fi
-    if [[ $sensor_side == front ]]; then
-      sensor=${sensors[-1]}/in_illuminance_raw
-    else
-      sensor=${sensors[0]}/in_illuminance_raw
-    fi
+    back_sensor=${sensors[0]}/in_illuminance_raw
+    front_sensor=${sensors[-1]}/in_illuminance_raw
+    if [[ $sensor_side == front ]]; then sensor=$front_sensor; else sensor=$back_sensor; fi
   fi
 
-  if ! raw_lux=$(<"$sensor") || [[ ! $raw_lux =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  if ! back_raw=$(<"$back_sensor") || ! front_raw=$(<"$front_sensor") \
+      || [[ ! $back_raw =~ ^[0-9]+([.][0-9]+)?$ ]] || [[ ! $front_raw =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     emit_status false "Could not read the ambient light sensor"
     sensor=""
     sleep "$poll_interval"
     continue
   fi
 
-  lux=$(awk -v raw="$raw_lux" -v scale="$als_scale" 'BEGIN { printf "%.10f", raw * scale }')
+  read -r back_lux front_lux <<<"$(
+    awk -v back="$back_raw" -v front="$front_raw" -v scale="$als_scale" \
+      'BEGIN { printf "%.10f %.10f", back * scale, front * scale }'
+  )"
+  if [[ $sensor_side == front ]]; then lux=$front_lux; else lux=$back_lux; fi
   read -r filtered_lux accepted_lux brightness target desired <<<"$(
     calculate "$lux" "$filtered_lux" "$accepted_lux" "$brightness" "$profile"
   )"

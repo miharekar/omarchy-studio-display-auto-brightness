@@ -15,6 +15,8 @@ Item {
   property string monitor: ""
   property string sensorPath: ""
   property real lux: 0
+  property real backLux: 0
+  property real frontLux: 0
   property int brightness: 0
   property real target: 0
   property string error: "Starting"
@@ -113,6 +115,8 @@ Item {
       monitor = status.monitor || ""
       sensorPath = status.sensor || ""
       if (typeof status.lux === "number") lux = status.lux
+      if (typeof status.backLux === "number") backLux = status.backLux
+      if (typeof status.frontLux === "number") frontLux = status.frontLux
       if (typeof status.brightness === "number") brightness = status.brightness
       if (typeof status.target === "number") target = status.target
       error = status.error || ""

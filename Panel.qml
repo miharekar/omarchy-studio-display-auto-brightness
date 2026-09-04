@@ -52,7 +52,8 @@ Panel {
 
         Repeater {
           model: [
-            ["AMBIENT", root.brightnessService?.lux?.toFixed(0) + " lux"],
+            ["AMBIENT", "Back " + root.brightnessService?.backLux?.toFixed(0)
+              + " · Front " + root.brightnessService?.frontLux?.toFixed(0) + " lux"],
             ["BRIGHTNESS", (root.brightnessService?.brightness ?? "--") + "%"],
             ["DISPLAY", root.brightnessService?.monitor || "Waiting"]
           ]
