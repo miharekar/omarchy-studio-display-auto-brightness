@@ -1,23 +1,24 @@
 {
   "schemaVersion": 1,
-  "id": "miharekar.clock",
-  "name": "My Clock",
+  "id": "miharekar.studio-display-auto-brightness",
+  "name": "Studio Display Auto Brightness",
   "version": "1.0.0",
-  "author": "Omarchy",
-  "description": "Date/time label with a calendar popup",
+  "author": "miharekar",
+  "license": "MIT",
+  "description": "Automatic ambient-light brightness control for Apple Studio Displays",
   "kinds": [
+    "service",
     "bar-widget"
   ],
   "entryPoints": {
+    "service": "Service.qml",
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "My Clock",
-    "description": "Date/time label with a calendar popup",
-    "category": "Time",
-    "allowMultiple": false
-  },
-  "omarchy": {
-    "clonedFrom": "omarchy.clock"
+    "displayName": "Studio Display Brightness",
+    "description": "Ambient light and brightness controls",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }

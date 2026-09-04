@@ -1,0 +1,195 @@
+#!/bin/bash
+
+set -u
+
+als_scale=0.001
+poll_interval=0.5
+lux_ema_alpha=0.25
+hysteresis=0.20
+brighten_alpha=0.35
+dim_alpha=0.10
+
+sensor_side=front
+profile=balanced
+self_test=0
+
+while (( $# > 0 )); do
+  case "$1" in
+    --sensor)
+      sensor_side="${2:-}"
+      shift 2
+      ;;
+    --profile)
+      profile="${2:-}"
+      shift 2
+      ;;
+    --self-test)
+      self_test=1
+      shift
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+[[ $sensor_side == front || $sensor_side == rear ]] || exit 2
+[[ $profile == dim || $profile == balanced || $profile == bright ]] || exit 2
+
+calculate() {
+  local lux="$1" filtered="$2" accepted="$3" current_brightness="$4" preference="$5"
+
+  awk \
+    -v lux="$lux" \
+    -v filtered="$filtered" \
+    -v accepted="$accepted" \
+    -v brightness="$current_brightness" \
+    -v preference="$preference" \
+    -v lux_alpha="$lux_ema_alpha" \
+    -v threshold="$hysteresis" \
+    -v up_alpha="$brighten_alpha" \
+    -v down_alpha="$dim_alpha" '
+    function curve(value,    i, x, xa, xb, t) {
+      split("0 5 20 50 100 200 400 800 1500 3000 5000", lux_points, " ")
+      split("12 18 25 32 40 50 60 70 80 90 100", pct_points, " ")
+      if (value <= lux_points[1]) return pct_points[1]
+      if (value >= lux_points[11]) return pct_points[11]
+      x = log(value + 1) / log(2)
+      for (i = 2; i <= 11; i++) {
+        if (value <= lux_points[i]) {
+          xa = log(lux_points[i - 1] + 1) / log(2)
+          xb = log(lux_points[i] + 1) / log(2)
+          t = (x - xa) / (xb - xa)
+          return pct_points[i - 1] + t * (pct_points[i] - pct_points[i - 1])
+        }
+      }
+      return 100
+    }
+    BEGIN {
+      filtered = filtered == "" ? lux : filtered + lux_alpha * (lux - filtered)
+      accepted = accepted == "" ? filtered : accepted
+      change = (filtered > accepted ? filtered - accepted : accepted - filtered) / (accepted > 1 ? accepted : 1)
+      if (change >= threshold) accepted = filtered
+
+      offset = preference == "dim" ? -10 : (preference == "bright" ? 10 : 0)
+      target = curve(accepted) + offset
+      if (target < 1) target = 1
+      if (target > 100) target = 100
+
+      if (brightness == "") brightness = target
+      else brightness += (target > brightness ? up_alpha : down_alpha) * (target - brightness)
+      desired = int(brightness + 0.5)
+      if (desired < 1) desired = 1
+      if (desired > 100) desired = 100
+
+      printf "%.10f %.10f %.10f %.10f %d\n", filtered, accepted, brightness, target, desired
+    }'
+}
+
+if (( self_test )); then
+  read -r _ _ _ target desired <<<"$(calculate 20 "" "" "" balanced)"
+  [[ $target == 25.0000000000 && $desired == 25 ]] || exit 1
+  read -r _ _ _ target desired <<<"$(calculate 0 "" "" "" dim)"
+  [[ $target == 2.0000000000 && $desired == 2 ]] || exit 1
+  read -r _ _ _ target desired <<<"$(calculate 5000 "" "" "" bright)"
+  [[ $target == 100.0000000000 && $desired == 100 ]] || exit 1
+  exit 0
+fi
+
+detect_monitor() {
+  timeout 5 hyprctl monitors -j 2>/dev/null | jq -er '
+    first(.[] | select(
+      (.disabled != true)
+      and ((.make // "") | ascii_downcase | contains("apple"))
+    ) | .name)'
+}
+
+discover_sensors() {
+  local path resolved
+  local -a candidates=() apple=() selected=()
+
+  for path in /sys/bus/iio/devices/iio:device*; do
+    [[ -r $path/name && -r $path/in_illuminance_raw ]] || continue
+    [[ $(<"$path/name") == als ]] || continue
+    candidates+=("$path")
+    resolved=$(readlink -f "$path")
+    [[ ${resolved,,} == *05ac:* ]] && apple+=("$path")
+  done
+
+  if (( ${#apple[@]} >= 2 )); then
+    selected=("${apple[@]}")
+  else
+    selected=("${candidates[@]}")
+  fi
+  (( ${#selected[@]} >= 2 )) || return 1
+  printf '%s\n' "${selected[@]}" | sort -V
+}
+
+emit_status() {
+  local available="$1" error="$2"
+  printf '{"available":%s,"monitor":"%s","sensor":"%s","lux":%.1f,"brightness":%d,"target":%.1f,"error":"%s"}\n' \
+    "$available" "$monitor" "${sensor:-}" "${filtered_lux:-0}" "${last_applied:-0}" "${target:-0}" "$error"
+}
+
+trap 'exit 0' TERM INT
+
+monitor=""
+sensor=""
+filtered_lux=""
+accepted_lux=""
+brightness=""
+last_applied=0
+target=0
+
+while true; do
+  if [[ -z $monitor ]] && ! monitor=$(detect_monitor); then
+    emit_status false "No Apple Studio Display found"
+    sleep "$poll_interval"
+    continue
+  fi
+
+  if [[ -z $sensor ]]; then
+    mapfile -t sensors < <(discover_sensors)
+    if (( ${#sensors[@]} < 2 )); then
+      emit_status false "Two Studio Display ALS devices were not found"
+      sleep "$poll_interval"
+      continue
+    fi
+    if [[ $sensor_side == front ]]; then
+      sensor=${sensors[-1]}/in_illuminance_raw
+    else
+      sensor=${sensors[0]}/in_illuminance_raw
+    fi
+  fi
+
+  if ! raw_lux=$(<"$sensor") || [[ ! $raw_lux =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    emit_status false "Could not read the ambient light sensor"
+    sensor=""
+    sleep "$poll_interval"
+    continue
+  fi
+
+  lux=$(awk -v raw="$raw_lux" -v scale="$als_scale" 'BEGIN { printf "%.10f", raw * scale }')
+  read -r filtered_lux accepted_lux brightness target desired <<<"$(
+    calculate "$lux" "$filtered_lux" "$accepted_lux" "$brightness" "$profile"
+  )"
+
+  if (( desired != last_applied )); then
+    if ! timeout 10 omarchy-brightness-display --no-osd --monitor "$monitor" "$desired%" >/dev/null 2>&1; then
+      emit_status true "Brightness command failed"
+      monitor=""
+      sensor=""
+      filtered_lux=""
+      accepted_lux=""
+      brightness=""
+      last_applied=0
+      sleep "$poll_interval"
+      continue
+    fi
+    last_applied=$desired
+  fi
+
+  emit_status true ""
+  sleep "$poll_interval"
+done
