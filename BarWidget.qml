@@ -26,7 +26,7 @@ BarWidget {
     panelLoader.item.brightnessService = root.brightnessService
   }
 
-  visible: brightnessService?.hardwareAvailable === true
+  visible: brightnessService?.paused === true || brightnessService?.hardwareAvailable === true
   implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: visible ? button.implicitHeight : 0
 
@@ -49,6 +49,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "󰖨"
+    dimmed: root.brightnessService?.paused === true
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }
