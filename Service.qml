@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
 Item {
@@ -24,19 +25,18 @@ Item {
   property bool expectedStop: false
   property bool restartPending: false
   readonly property bool controllerRunning: controller.running
+  readonly property string controllerPath: Quickshell.env("HOME")
+    + "/.config/omarchy/plugins/" + (manifest?.id || "") + "/controller"
 
   function configEntry() {
-    var config = shell?.shellConfig
+    var config = shell?.barConfig
     var sections = ["left", "center", "right"]
-    var layout = config?.bar?.layout
+    var layout = config?.layout
     for (var s = 0; layout && s < sections.length; s++) {
       var entries = layout[sections[s]] || []
       for (var i = 0; i < entries.length; i++)
         if (entries[i]?.id === manifest?.id) return entries[i]
     }
-    var plugins = config?.plugins || []
-    for (var p = 0; p < plugins.length; p++)
-      if (plugins[p]?.id === manifest?.id) return plugins[p]
     return ({})
   }
 
@@ -86,11 +86,11 @@ Item {
   }
 
   function startController() {
-    if (paused || controller.running || !manifest?.__sourceDir) return
+    if (paused || controller.running || !manifest?.id) return
     expectedStop = false
     controller.command = [
       "setpriv", "--pdeathsig", "TERM",
-      manifest.__sourceDir + "/controller",
+      controllerPath,
       "--sensor", sensorSide,
       "--profile", profile
     ]
@@ -160,7 +160,7 @@ Item {
 
   Connections {
     target: root.shell
-    function onShellConfigChanged() { root.syncSettings() }
+    function onBarConfigChanged() { root.syncSettings() }
   }
 
   onShellChanged: syncSettings()
