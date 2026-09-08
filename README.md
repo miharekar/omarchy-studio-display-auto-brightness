@@ -3,6 +3,8 @@
 An Omarchy bar widget and singleton service that adjusts Apple display
 brightness from its ambient-light sensors.
 
+![Studio Display Auto Brightness panel](preview.png)
+
 Verified on an Apple display reported by Hyprland as `Studio XDR`.
 The same hardware interfaces may make it work with other Apple displays, but
 those still need testing.

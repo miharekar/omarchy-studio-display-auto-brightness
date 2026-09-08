@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "miharekar.studio-display-auto-brightness",
   "name": "Studio Display Auto Brightness",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "miharekar",
   "license": "MIT",
   "description": "Automatic ambient-light brightness control for Apple Studio Displays",
