@@ -191,7 +191,7 @@ while true; do
       last_applied=$current
       omarchy bar set miharekar.studio-display-auto-brightness paused true --json >/dev/null 2>&1 || true
       emit_status true "" true
-      while true; do sleep 3600; done
+      exit 0
     fi
     last_manual_check=$SECONDS
   fi

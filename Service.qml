@@ -7,6 +7,7 @@ Item {
 
   property var shell: null
   property var manifest: null
+  property bool settingsReady: false
 
   property string sensorSide: "front"
   property string profile: "balanced"
@@ -29,9 +30,9 @@ Item {
     + "/.config/omarchy/plugins/" + (manifest?.id || "") + "/controller"
 
   function configEntry() {
-    var config = shell?.barConfig
+    var config = JSON.parse(settingsFile.text())
     var sections = ["left", "center", "right"]
-    var layout = config?.layout
+    var layout = config?.bar?.layout
     for (var s = 0; layout && s < sections.length; s++) {
       var entries = layout[sections[s]] || []
       for (var i = 0; i < entries.length; i++)
@@ -41,6 +42,7 @@ Item {
   }
 
   function syncSettings() {
+    if (!manifest) return
     var entry = configEntry()
     var nextSensor = ["front", "rear"].indexOf(entry.sensor) >= 0 ? entry.sensor : "front"
     var nextProfile = ["dim", "balanced", "bright"].indexOf(entry.profile) >= 0
@@ -51,42 +53,39 @@ Item {
     sensorSide = nextSensor
     profile = nextProfile
     paused = nextPaused
+    settingsReady = true
     if (changed || pauseChanged) restartController()
+    else startController()
   }
 
-  function persist(values) {
+  function persist(nextSensor, nextProfile, nextPaused) {
     if (!shell || !manifest) return
-    var entry = configEntry()
-    var merged = { id: manifest.id }
-    for (var key in entry) if (key !== "id") merged[key] = entry[key]
-    for (var name in values) merged[name] = values[name]
-    shell.updateEntryInline(manifest.id, merged)
+    shell.updateEntryInline(manifest.id, {
+      id: manifest.id,
+      sensor: nextSensor,
+      profile: nextProfile,
+      paused: nextPaused
+    })
   }
 
   function setSensorSide(value) {
     if (["front", "rear"].indexOf(value) < 0 || sensorSide === value) return
-    sensorSide = value
-    persist({ sensor: value })
-    restartController()
+    persist(value, profile, paused)
   }
 
   function setProfile(value) {
     if (["dim", "balanced", "bright"].indexOf(value) < 0 || profile === value) return
-    profile = value
-    persist({ profile: value })
-    restartController()
+    persist(sensorSide, value, paused)
   }
 
   function setPaused(value) {
     value = value === true
     if (paused === value) return
-    paused = value
-    persist({ paused: value })
-    restartController()
+    persist(sensorSide, profile, value)
   }
 
   function startController() {
-    if (paused || controller.running || !manifest?.id) return
+    if (!settingsReady || paused || controller.running || !manifest?.id) return
     expectedStop = false
     controller.command = [
       "setpriv", "--pdeathsig", "TERM",
@@ -158,13 +157,18 @@ Item {
     onTriggered: root.startController()
   }
 
-  Connections {
-    target: root.shell
-    function onBarConfigChanged() { root.syncSettings() }
+  FileView {
+    id: settingsFile
+    // The scoped barConfig snapshot can lag one edit behind shell.json.
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: root.syncSettings()
   }
 
-  onShellChanged: syncSettings()
-  onManifestChanged: startController()
+  onManifestChanged: {
+    if (settingsFile.loaded) syncSettings()
+  }
 
   Component.onDestruction: {
     restartTimer.stop()
