@@ -24,6 +24,12 @@ The controller is a Bash script and only uses commands included with Omarchy:
 `hyprctl`, `jq`, `awk`, and `omarchy-brightness-display`. It creates no
 systemd units and requires no Python or compiled-language runtime.
 
+## Remove
+
+```sh
+omarchy plugin remove miharekar.studio-display-auto-brightness
+```
+
 ## License
 
 MIT
